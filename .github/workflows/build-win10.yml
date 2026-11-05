@@ -1,0 +1,63 @@
+name: Build Windows 10 Custom
+
+on:
+  workflow_dispatch:
+    inputs:
+      iso_url:
+        description: "(Opsional) Link direct ISO. Kosongkan = ambil otomatis dari Microsoft lewat Fido"
+        required: false
+        default: ""
+        type: string
+      release:
+        description: "Rilis Windows 10 (untuk mode otomatis)"
+        required: false
+        default: "22H2"
+        type: string
+      lang:
+        description: "Bahasa ISO (untuk mode otomatis)"
+        required: false
+        default: "English International"
+        type: string
+      edition:
+        description: "Nama edisi di dalam ISO"
+        required: false
+        default: "Windows 10 Pro"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pasang oscdimg
+        shell: pwsh
+        run: choco install windows-adk-oscdimg -y --no-progress
+
+      - name: Build ISO kustom
+        shell: pwsh
+        env:
+          ISO_URL: ${{ inputs.iso_url }}
+          EDITION: ${{ inputs.edition }}
+          RELEASE: ${{ inputs.release }}
+          LANG_NAME: ${{ inputs.lang }}
+        run: ./scripts/build.ps1 -IsoUrl "$env:ISO_URL" -Edition "$env:EDITION" -Release "$env:RELEASE" -Lang "$env:LANG_NAME"
+
+      - name: Pecah jadi part 1.9 GB
+        shell: pwsh
+        run: |
+          & "C:\Program Files\7-Zip\7z.exe" a -mx0 -v1900m C:\work\out\Win10_Custom.7z C:\work\out\Win10_Custom.iso
+          Remove-Item C:\work\out\Win10_Custom.iso
+
+      - name: Upload ke Draft Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "win10-$env:GITHUB_RUN_NUMBER"
+          $files = Get-ChildItem C:\work\out -Filter 'Win10_Custom.7z.*' | ForEach-Object FullName
+          gh release create $tag @files --draft --title "Win10 Custom #$env:GITHUB_RUN_NUMBER" --notes "Download semua part, lalu ekstrak part .001 dengan 7-Zip untuk mendapat ISO."
